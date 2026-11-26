@@ -1,4 +1,4 @@
-import {session} from './store.js';
+import {session, COMPUTE_ACTIVE_STATES} from './store.js';
 
 export async function request(path, data) {
   const headers = {'Content-Type':'application/json'};
@@ -13,12 +13,17 @@ export async function request(path, data) {
   return payload;
 }
 
-export async function awaitCompute(token, report) {
-  for (let i = 0; i < 40; i++) {
+export async function stopCompute(token, outcome = 'stop') {
+  return request(`/compute/${token}/${outcome}`, {});
+}
+
+export async function awaitCompute(token, report, {attempts = 240, interval = 250} = {}) {
+  for (let i = 0; i < attempts; i++) {
     const data = await request('/compute/' + token);
     report(data);
-    if (data.status !== 'queued') return data;
-    await new Promise(resolve => setTimeout(resolve, 250));
+    // 只有进入终态才结束等待；queued/running/stopping 都继续轮询。
+    if (!COMPUTE_ACTIVE_STATES.includes(data.status)) return data;
+    await new Promise(resolve => setTimeout(resolve, interval));
   }
-  throw new Error('计算仍在排队，可回到工作页继续查询任务号');
+  throw new Error('计算仍在排队或进行中，可回到工作页继续查询任务号');
 }

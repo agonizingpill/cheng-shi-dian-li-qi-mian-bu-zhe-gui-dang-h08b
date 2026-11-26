@@ -3,8 +3,16 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics.pairwise import euclidean_distances
 import numpy as np
 
+from core.quota import MemoryLimitExceeded, memory_cost, memory_limit
+
 def calculate(data):
     rows=data['references']
+    # 额度兜底：正常入口（service/submit/准入）已拦截，这里保证任何直接
+    # 调用 calculate 的路径也不会开算超过共用内存总额的单。
+    cost=memory_cost(rows)
+    total=memory_limit()
+    if cost > total:
+        raise MemoryLimitExceeded(cost, total)
     values=[[r[k] for k in ('depth','width','lines')] for r in rows]
     scale=StandardScaler().fit(values)
     vectors=scale.transform(values)

@@ -71,3 +71,6 @@ label span { display:block; color:var(--soft); font-size:.875em }
 nav { border-inline-end:4px double var(--accent) }
 .record { border-inline-start:0; border-bottom:3px solid var(--accent) }
 .title { background:var(--tint); padding:1rem 1.3rem }
+.buttons { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center }
+button.stop { background:transparent; color:var(--accent) }
+button[hidden] { display:none }

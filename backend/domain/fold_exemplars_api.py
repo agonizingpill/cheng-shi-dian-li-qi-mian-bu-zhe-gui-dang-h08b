@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
+from core import queueing
 from core.auth import actor, allow
 from core.audit import record
 from core.db import transaction
@@ -10,10 +12,21 @@ from domain.fold_exemplars_schemas import FindExemplar, SaveExemplar
 
 router = APIRouter()
 
+
+class TokenControl(BaseModel):
+    token: str
+
+
 @router.get('/fold_exemplars')
 def list_fold_exemplars(user=Depends(actor)):
     with transaction() as conn:
         return scan(conn, fold_exemplars)
+
+
+@router.get('/fold_exemplars/quota')
+@router.get('/fold_exemplars/memory')
+def fold_exemplars_quota(user=Depends(actor)):
+    return queueing.quota_snapshot()
 
 
 @router.post('/fold_exemplars/find-exemplar')
@@ -32,3 +45,17 @@ def save_exemplar(data: SaveExemplar, user=Depends(actor)):
         output = service.save_exemplar(conn, user, data)
         record(conn, user, 'fold_exemplars.save_exemplar')
         return output
+
+
+@router.post('/fold_exemplars/stop')
+@router.post('/fold_exemplars/stop-exemplar')
+def stop_exemplar(body: TokenControl, user=Depends(actor)):
+    allow(user, ('operator', 'reviewer'))
+    return queueing.request_stop(user, body.token, outcome='stopped')
+
+
+@router.post('/fold_exemplars/cancel')
+@router.post('/fold_exemplars/cancel-exemplar')
+def cancel_exemplar(body: TokenControl, user=Depends(actor)):
+    allow(user, ('operator', 'reviewer'))
+    return queueing.request_stop(user, body.token, outcome='cancelled')

@@ -57,6 +57,18 @@ Compose 运行 Nginx、Python FastAPI、独立 Redis 消费进程、SQL 数据�
 
 SQL 实体与约束在 `backend/domain` 下维护。前端使用原生 ES modules。核心算子为 AffinityPropagation。在标准化空间用 AffinityPropagation 搜索代表样，查询归入欧氏距离最近的代表簇。
 
+### 折态计算的共用内存额度、排队与恢复
+
+折态计算的相似度矩阵按参考样条数 `n` 呈 `n*n` 增长，因此每单估算占用取 `n**2`（`core/quota.py: memory_cost`）。
+
+- 共用内存总额由 `FOLD_MEMORY_LIMIT`（同义支持 `COMPUTE_MEMORY_LIMIT`/`MEMORY_LIMIT` 等）配置，默认 `4096`；docker compose 会把这些变量透传给 backend 与 worker。
+- `n**2 > 总额` 的单在 `find-exemplar` 提交时即拒绝：返回 HTTP 409，同时落一张 `rejected` 计算单，响应体与异常上带 `token`，可继续 `GET /compute/{token}` 查到拒绝原因。能算的单不截断参考样，AffinityPropagation 用齐全部参考样。
+- 已准入单的占用总和记在 Redis `compute:memory:used`，每单另有 `compute:{token}:reserved` 占位键；认领脚本（`core/queueing.py: claim_next`，Lua 保证原子，无 Lua 的 broker 自动走线程锁兜底）保证多单/多 worker 同时认领也不会超额。
+- 准入是回填（backfill）顺序：队首大单当前放不下时跳过，后面放得下的小单可以先算；大单继续排队，等额度释放后再认领。worker（`core/worker.py`）在额度内以守护线程并发开算，`WORKER_CONCURRENCY` 只是并发上限，硬边界仍是额度。
+- 慢单在整个计算期间照占额度。`POST /compute/{token}/stop`（或 `/cancel`，亦支持 `/fold_exemplars/stop`、`/fold_exemplars/cancel`，复核员/提交人可用）只写停算标记，状态为 `stopping`/`cancelling`，额度不释放；worker 等计算体退出并确认停算（`confirm_stopped`）后才写 `stopped`/`cancelled` 终态并释放额度。还在队列里未占额度的单会被立即摘除并置终态。
+- worker 启动（或 `serve()` 开始）时把残留在 `compute_requests:processing` 的原单放回主队列，原 token、原输入不变。每次认领 `compute:{token}:attempt` 加一作为围栏：终态写回的 Lua 会校验趟次，中断前旧一趟迟到的 `ready`/结果不会覆盖新一趟，也不会释放新一趟仍占用的额度；只有新一趟的结果生效。
+- `GET /compute/quota`（别名 `/compute-quota`、`/compute/memory`、`/fold_exemplars/quota`）返回 `limit/total/used/available` 等额度快照。
+
 旗面和读数为模拟记录。应用供文档移交使用，折痕样条无实际馆藏影像。
 
 [MIT](LICENSE)

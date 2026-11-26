@@ -7,6 +7,12 @@ x-python: &python
     REDIS_URL: redis://redis:6379/0
     JWT_SECRET: ${JWT_SECRET:-local-demo-secret-ceremonial-flag-fold}
     SEED_DEMO: ${SEED_DEMO:-true}
+    # 额度变量按多个候选名透传；都未设置时由 core.config 取内置默认。
+    FOLD_MEMORY_LIMIT: ${FOLD_MEMORY_LIMIT:-}
+    FOLD_MEMORY_TOTAL: ${FOLD_MEMORY_TOTAL:-}
+    COMPUTE_MEMORY_LIMIT: ${COMPUTE_MEMORY_LIMIT:-}
+    MEMORY_LIMIT: ${MEMORY_LIMIT:-}
+    WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-32}
   volumes:
     - results:/results
   depends_on:
@@ -37,6 +43,8 @@ services:
     <<: *python
     container_name: ${COMPOSE_PROJECT_NAME:-ceremonial-flag-fold}-worker
     command: ["python", "-m", "core.worker"]
+    # 计算进程异常退出后自动重启；启动时会把 processing 中的原单恢复回队列。
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import time,os; assert time.time()-os.stat('/tmp/compute-heartbeat').st_mtime < 20"]
       interval: 2s
